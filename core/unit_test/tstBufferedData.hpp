@@ -191,9 +191,9 @@ void testBufferedDataCreation()
     buf_t buffered_aosoa_in( aosoa, max_buffered_tuples );
 
     // Reset values so the outcome differs
-    fval = 3.4;
-    dval = 1.23;
-    ival = 1;
+    fval = 4.4;
+    dval = 2.23;
+    ival = 2;
 
     Cabana::buffered_parallel_for(
         Kokkos::RangePolicy<target_exec_space>( 0, aosoa.size() ),
