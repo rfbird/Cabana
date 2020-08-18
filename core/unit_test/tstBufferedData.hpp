@@ -137,7 +137,7 @@ void testBufferedDataCreation()
     // Declare the AoSoA type.
     using AoSoA_t = Cabana::AoSoA<DataTypes, Kokkos::HostSpace, vector_length>;
     std::string label = "sample_aosoa";
-    int num_data = 1024;
+    int num_data = 1024 * 1024;
     AoSoA_t aosoa( label, num_data );
 
     // Start by only buffering over one AoSoA at a time for stress test
@@ -254,6 +254,6 @@ void testBufferedDataCreation()
 // RUN TESTS
 //---------------------------------------------------------------------------//
 TEST( TEST_CATEGORY, bufferedData_test ) { testBufferedDataCreation(); }
-//TEST( TEST_CATEGORY, bufferedData_tag_test ) { testBufferedTag(); }
+// TEST( TEST_CATEGORY, bufferedData_tag_test ) { testBufferedTag(); }
 
 } // namespace Test

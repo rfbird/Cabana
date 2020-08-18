@@ -13,6 +13,7 @@
 #define CABANA_DEEPCOPY_HPP
 
 #include <Cabana_AoSoA.hpp>
+#include <Cabana_BufferedFor.hpp> // TODO: remove
 #include <Cabana_Slice.hpp>
 #include <impl/Cabana_TypeTraits.hpp>
 
@@ -406,9 +407,9 @@ inline void deep_copy( Slice_t &slice,
  * @param end_from
  * @param start_to
  */
-template <class DstAoSoA, class SrcAoSoA>
+template <typename exec_space, class DstAoSoA, class SrcAoSoA>
 inline void deep_copy_partial_src(
-    DstAoSoA &dst, const SrcAoSoA &src,
+    exec_space &space, DstAoSoA &dst, const SrcAoSoA &src,
     // const int to_index,
     // TODO: the order of these params is questionable
     const int from_index, const int count,
@@ -445,7 +446,7 @@ inline void deep_copy_partial_src(
               << std::endl;
 
     // Populate it with data using a parallel for
-    // TODO: this copy_func is borrow from above, so we could DRY
+    // TODO: this copy_func is borrowed from above, so we could DRY
     auto copy_func = KOKKOS_LAMBDA( const std::size_t i )
     {
         src_partial.setTuple( i, src.getTuple( i + from_index ) );
@@ -455,7 +456,6 @@ inline void deep_copy_partial_src(
         0, src_partial.size() );
 
     Kokkos::parallel_for( "Cabana::deep_copy", exec_policy, copy_func );
-    Kokkos::fence();
 
     std::cout << "src particle size " << src_partial.size() << " dst size "
               << dst.size() << std::endl;
@@ -482,9 +482,9 @@ inline void deep_copy_partial_src(
  * @param count
  * @param
  */
-template <class DstAoSoA, class SrcAoSoA>
+template <typename exec_space, class DstAoSoA, class SrcAoSoA>
 inline void deep_copy_partial_dst(
-    DstAoSoA dst, const SrcAoSoA src,
+    exec_space &space, DstAoSoA dst, const SrcAoSoA src,
     const int to_index, // TODO: the order of these params is questionable
     // const int from_index, // TODO: not honored
     const int count,
@@ -500,15 +500,12 @@ inline void deep_copy_partial_dst(
     std::cout << "dst partial size " << dst_partial.size() << std::endl;
     std::cout << "src size " << src.size() << std::endl;
 
-    Cabana::deep_copy( dst_partial, src );
-    Kokkos::fence();
+    bool async = 1; // TODO: this could be a template?
+    Cabana::deep_copy( dst_partial, src, async );
+    // Kokkos::fence();
 
     // assert( count <= src.size() );
     assert( to_index + count <= dst.size() );
-
-    auto d_0 = Cabana::slice<0>( dst );
-    auto dp_0 = Cabana::slice<0>( dst_partial );
-    auto s_0 = Cabana::slice<0>( src );
 
     // Populate it with data using a parallel for
     auto copy_func = KOKKOS_LAMBDA( const std::size_t i )
@@ -516,11 +513,21 @@ inline void deep_copy_partial_dst(
         dst.setTuple( i + to_index, dst_partial.getTuple( i ) );
     };
 
-    Kokkos::RangePolicy<typename DstAoSoA::execution_space> exec_policy(
+    // TODO: hoist this up to a higher level
+    using target_space_t = typename DstAoSoA::execution_space;
+    target_space_t target_async_space = SpaceInstance<target_space_t>::create();
+    // Kokkos::RangePolicy<typename DstAoSoA::execution_space> exec_policy(
+    // 0, dst_partial.size() );
+    Kokkos::RangePolicy<target_space_t> exec_policy(
+        target_async_space,
+        // Kokkos::RangePolicy<exec_space> exec_policy( space,
         0, dst_partial.size() );
 
     Kokkos::parallel_for( "Cabana::deep_copy", exec_policy, copy_func );
+    // Kokkos::fence();
+
     Kokkos::fence();
+    SpaceInstance<target_space_t>::destroy( target_async_space );
 
     assert( dst_partial.size() == src.size() );
 }

@@ -162,8 +162,8 @@ class BufferedAoSoA
     // Holds a collection of slices for a single buffer. Currently means we can
     // only hold slices to a single buffer at a time
     slice_tuple_t slice_tuple;
-    // (We could make slice_tuple an array to hold multiple buffers worth of slices,
-    // but the user should not have to know which buffer they are in.)
+    // (We could make slice_tuple an array to hold multiple buffers worth of
+    // slices, but the user should not have to know which buffer they are in.)
 
     /**
      * @brief Getter to access the slices this class generates for the
@@ -194,8 +194,7 @@ class BufferedAoSoA
      * requested_buffer_count*max_buffered_tuples*sizeof(particle)
      */
     BufferedAoSoA( AoSoA_t original_view_in, int max_buffered_tuples )
-        :
-        original_view( original_view_in )
+        : original_view( original_view_in )
         , num_buffers( requested_buffer_count )
         , buffer_size( max_buffered_tuples )
     {
@@ -247,10 +246,11 @@ class BufferedAoSoA
      * @param start_index Index to place buffer data into in original
      * aosoa
      */
-    void copy_buffer_back( int buffer_index, int to_index )
+    template <typename exec_space>
+    void copy_buffer_back( exec_space &space, int buffer_index, int to_index )
     {
         std::cout << "original view size " << original_view.size() << std::endl;
-        Cabana::deep_copy_partial_dst( original_view,
+        Cabana::deep_copy_partial_dst( space, original_view,
                                        internal_buffers[buffer_index], to_index,
                                        // 0, // from index
                                        buffer_size );
@@ -262,7 +262,8 @@ class BufferedAoSoA
      *
      * @param buffer_number The index of the (internal) buffer to populate
      */
-    void load_buffer( int buffer_number )
+    template <typename exec_space>
+    void load_buffer( exec_space &space, int buffer_number )
     {
         // TODO: does this imply the need for a subview so the sizes
         // match?
@@ -272,7 +273,7 @@ class BufferedAoSoA
         int start_index = normalized_buffer_number * buffer_size;
         // Copy from the main memory store into the "current" buffer
         Cabana::deep_copy_partial_src(
-            internal_buffers[normalized_buffer_number], original_view,
+            space, internal_buffers[normalized_buffer_number], original_view,
             // 0, // to_index,
             start_index, buffer_size );
 

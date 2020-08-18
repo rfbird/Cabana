@@ -77,20 +77,17 @@ inline void custom_simd_parallel_for(
 
     using index_type = typename team_policy::index_type;
 
-    using ex = typename simd_policy::execution_space;
+    // using ex = typename simd_policy::execution_space;
 
-    auto f = KOKKOS_LAMBDA( extra_functor_arg_t buffered_aosoa, int s, int i )
+    /* // I'm surprised we don't need this... I expect that we need to recapture
+    the buffered_aosoa auto f = KOKKOS_LAMBDA( extra_functor_arg_t
+    buffered_aosoa, int s, int i )
     {
         functor(
             buffered_aosoa, s, i
         );
     };
-
-    // TODO: this casues a seg fawult even if we don't use it???
-    // Kokkos::DefaultExecutionSpace space1 =
-    // SpaceInstance<Kokkos::DefaultExecutionSpace>::create(); std::cout <<
-    // "Enabling async .. " << SpaceInstance<ex>::overlap() << std::endl;
-    // SpaceInstance<ex>::destroy(space1);
+    */
 
     Kokkos::parallel_for(
         str, dynamic_cast<const team_policy &>( exec_policy ),
@@ -100,7 +97,8 @@ inline void custom_simd_parallel_for(
                 Kokkos::ThreadVectorRange( team, exec_policy.arrayBegin( s ),
                                            exec_policy.arrayEnd( s ) ),
                 [&]( const index_type a ) {
-                    Impl::functorTagDispatch<work_tag>( f, f_arg, s, a );
+                    Impl::functorTagDispatch<work_tag>( functor, f_arg, s, a );
+                    // Impl::functorTagDispatch<work_tag>( f, f_arg, s, a );
                     // functor( f_arg, s, a);
                 } );
         } );
@@ -135,11 +133,23 @@ inline void buffered_parallel_for(
 
     constexpr int VectorLength =
         BufferedAoSoA_t::from_AoSoA_type::vector_length;
-    using simd_policy = SimdPolicy<VectorLength, ExecParameters...>;
-    using work_tag = typename simd_policy::work_tag;
-    // using team_policy = typename simd_policy::base_type;
 
+    using simd_policy = SimdPolicy<VectorLength, ExecParameters...>;
+
+    using work_tag = typename simd_policy::work_tag;
+
+    // using team_policy = typename simd_policy::base_type;
     // using index_type = typename team_policy::index_type;
+
+    // TODO: If I'm pulling the exec space out like this, maybe it's a clue
+    // that we don't want them to think they're explicitly passing me a range
+    // policy as I don't strictly honor it
+    using target_space_t = typename simd_policy::execution_space;
+
+    target_space_t target_async_space = SpaceInstance<target_space_t>::create();
+
+    std::cout << "Enabling async? .. "
+              << SpaceInstance<target_space_t>::overlap() << std::endl;
 
     int global_begin = exec_policy.begin();
     int global_end = exec_policy.end();
@@ -160,7 +170,9 @@ inline void buffered_parallel_for(
     int end = begin + buffer_size;
 
     // Load the first buffer, and block
-    buffered_aosoa.load_buffer( 0 );
+    buffered_aosoa.load_buffer( target_async_space, 0 );
+
+    // Buffer here so we have some data on the device where we start executing
     Kokkos::fence();
 
     for ( int i = 0; i < niter; i++ )
@@ -175,20 +187,24 @@ inline void buffered_parallel_for(
 
         simd_policy policy( begin, end );
 
-        // TODO: this uses a global object so will break if we go fully async
+        // TODO: this uses a global object to hold state so will break if we go
+        // fully async
         buffered_aosoa.slice_buffer( i );
 
         custom_simd_parallel_for( policy, functor, buffered_aosoa, str );
         // Cabana::simd_parallel_for( policy, functor, str );
-        Kokkos::fence();
+        // Kokkos::fence();
 
         auto s = Cabana::slice<0>( buffered_aosoa.internal_buffers[0] );
 
         if ( i < niter - 1 )
         { // Don't copy "next" on the last iteration
-            buffered_aosoa.load_buffer( i + 1 );
+            buffered_aosoa.load_buffer( target_async_space, i + 1 );
         }
 
+        // This fence is needed so we don't copy back the work we just
+        // finished. After the first iteration we can overlap copy to + work +
+        // copy back if we want
         Kokkos::fence();
 
         // copy all data back from localbuffer into the correct location in
@@ -196,9 +212,13 @@ inline void buffered_parallel_for(
         std::cout << "copy back buffer "
                   << i % buffered_aosoa.get_buffer_count() << std::endl;
 
-        buffered_aosoa.copy_buffer_back( i % buffered_aosoa.get_buffer_count(),
+        buffered_aosoa.copy_buffer_back( target_async_space,
+                                         i % buffered_aosoa.get_buffer_count(),
                                          buffer_size * ( i ) );
     }
+
+    Kokkos::fence(); // Make sure space is done before we destory it
+    SpaceInstance<target_space_t>::destroy( target_async_space );
 }
 } // namespace Cabana
 #endif // CABANA_BUFFEREDFOR_HPP
