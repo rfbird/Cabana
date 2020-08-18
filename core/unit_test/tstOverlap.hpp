@@ -128,7 +128,7 @@ void set_val(
     Cabana::simd_parallel_for( policy_1, f, "test set" );
 }
 
-void tstOverlap()
+void tstOverlap(bool async = true)
 {
     // We want this to match the target space so we can do a fast async
     // copy
@@ -145,19 +145,16 @@ void tstOverlap()
 
     // Declare the AoSoA type.
     using AoSoA_t = Cabana::AoSoA<DataTypes, TEST_EXECSPACE, vector_length>;
-    //int num_data = 1024 * 256;
-    int num_data = 64;
+
+    //using AoSoA_h_t = Cabana::AoSoA<DataTypes, Kokkos::DefaultHostExecutionSpace, vector_length>;
+    using AoSoA_h_t = Cabana::AoSoA<DataTypes, Kokkos::HostSpace, vector_length>;
+
+    int num_data = 1024 * 256;
+    //int num_data = 64;
 
     AoSoA_t aosoa1( "aosoa 1", num_data );
     AoSoA_t aosoa2( "aosoa 2", num_data );
     AoSoA_t aosoa3( "aosoa 3", num_data );
-
-    auto h1 =
-        Cabana::create_mirror_view_and_copy( Kokkos::HostSpace(), aosoa1 );
-    auto h2 =
-        Cabana::create_mirror_view_and_copy( Kokkos::HostSpace(), aosoa2 );
-    auto h3 =
-        Cabana::create_mirror_view_and_copy( Kokkos::HostSpace(), aosoa3 );
 
     float init_fval = 3.4;
     double init_dval = 1.23;
@@ -167,6 +164,23 @@ void tstOverlap()
     set_val(aosoa1, init_fval, init_dval, init_ival, dim_1, dim_2, dim_3);
     set_val(aosoa2, init_fval, init_dval, init_ival, dim_1, dim_2, dim_3);
     set_val(aosoa3, init_fval, init_dval, init_ival, dim_1, dim_2, dim_3);
+
+    // If you use mirror view here you don't get the exact right layout
+    AoSoA_h_t h1( "host aosoa 1", num_data );
+    AoSoA_h_t h2( "host aosoa 2", num_data );
+    AoSoA_h_t h3( "host aosoa 3", num_data );
+
+    // Fill host copy with inited data
+    Cabana::deep_copy( h1, aosoa1, async );
+    Cabana::deep_copy( h2, aosoa2, async );
+    Cabana::deep_copy( h3, aosoa3, async );
+
+
+    /////// START ///////
+    // copy to device
+    Cabana::deep_copy( aosoa1, h1, async );
+    Cabana::deep_copy( aosoa2, h2, async );
+    Cabana::deep_copy( aosoa3, h3, async );
 
     float fval = 4.4;
     double dval = 2.23;
@@ -178,19 +192,19 @@ void tstOverlap()
     set_val(aosoa3, fval, dval, ival, dim_1, dim_2, dim_3);
 
     // Copy back
-    Cabana::deep_copy( h1, aosoa1 );
-    Cabana::deep_copy( h2, aosoa2 );
-    Cabana::deep_copy( h3, aosoa3 );
+    Cabana::deep_copy( h1, aosoa1, async );
+    Cabana::deep_copy( h2, aosoa2, async );
+    Cabana::deep_copy( h3, aosoa3, async );
 
     Kokkos::fence();
     // check
-    checkDataMembers( aosoa1, fval, dval, ival, dim_1, dim_2, dim_3 );
+    checkDataMembers( h1, fval, dval, ival, dim_1, dim_2, dim_3 );
 }
 
 //---------------------------------------------------------------------------//
 // RUN TESTS
 //---------------------------------------------------------------------------//
-TEST( TEST_CATEGORY, bufferedData_test ) { tstOverlap(); }
-// TEST( TEST_CATEGORY, bufferedData_tag_test ) { testBufferedTag(); }
+TEST( TEST_CATEGORY, bufferedData_test_async ) { tstOverlap(); }
+TEST( TEST_CATEGORY, bufferedData_test_noasync ) { tstOverlap(false); }
 
 } // namespace Test
