@@ -214,7 +214,6 @@ void testBufferedDataCreation()
             const auto slice_3 = buffered_aosoa.get_slice<3>();
 
             // Member 0.
-
             for ( int i = 0; i < dim_1; ++i )
             {
                 for ( int j = 0; j < dim_2; ++j )

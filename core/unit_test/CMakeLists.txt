@@ -81,6 +81,7 @@ macro(Cabana_add_tests)
 endmacro()
 
 Cabana_add_tests(NAMES AoSoA Slice DeepCopy Tuple Sort LinkedCellList NeighborList Parallel BufferedData)
+Cabana_add_tests(NAMES Overlap)
 
 if(Cabana_ENABLE_ARBORX)
   Cabana_add_tests(NAMES NeighborListArborX)
