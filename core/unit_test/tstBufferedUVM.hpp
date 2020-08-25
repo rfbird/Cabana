@@ -31,19 +31,19 @@ void checkDataMembers( aosoa_type aosoa, const float fval, const double dval,
                        const int ival, const int dim_1, const int dim_2,
                        const int dim_3, int copy_back = 1 )
 {
-    auto mirror =
-        Cabana::create_mirror_view_and_copy( Kokkos::HostSpace(), aosoa );
+    //auto mirror =
+        //Cabana::create_mirror_view_and_copy( Kokkos::HostSpace(), aosoa );
         //Cabana::create_mirror_view_and_copy( Kokkos::CudaHostPinnedSpace(), aosoa );
 
-    if ( copy_back == 0 )
-    {
-        mirror = aosoa;
-    }
+    //if ( copy_back == 0 )
+    //{
+        //auto mirror = aosoa;
+    //}
 
-    auto slice_0 = Cabana::slice<0>( mirror );
-    auto slice_1 = Cabana::slice<1>( mirror );
-    auto slice_2 = Cabana::slice<2>( mirror );
-    auto slice_3 = Cabana::slice<3>( mirror );
+    auto slice_0 = Cabana::slice<0>( aosoa );
+    auto slice_1 = Cabana::slice<1>( aosoa );
+    auto slice_2 = Cabana::slice<2>( aosoa );
+    auto slice_3 = Cabana::slice<3>( aosoa );
 
     for ( std::size_t idx = 0; idx < aosoa.size(); ++idx )
     {
@@ -120,11 +120,17 @@ void testBufferedTag()
 }
 */
 
-void testBufferedDataCreation()
+void testBufferedCudaUVM()
 {
+    //int num_data = 1024; // * 1024;   // 2kb
+    //int num_data = 1024 * 1024;       // 200mb
+    //int num_data = 1024 * 1024 * 32;  // 6.4GB
+    const int num_data = 1024 * 1024 * 112;   // 20GB (20199768064)
+
     // We want this to match the target space so we can do a fast async
     // copy
-    const int vector_length = 32; // TODO: make this 32 be the default for GPU
+    const int vector_length = 1024*1024*32; // SoA
+    //const int vector_length = 32; // TODO: make this 32 be the default for GPU
 
     // Data dimensions.
     const int dim_1 = 3;
@@ -138,99 +144,38 @@ void testBufferedDataCreation()
     // Declare the AoSoA type.
     // CudaHostPinned Space does not change performance (in 40eb8b7dff265b7f2ca580494c0355352856278a)
     using AoSoA_t = Cabana::AoSoA<DataTypes, Kokkos::CudaHostPinnedSpace, vector_length>;
-    //using AoSoA_t = Cabana::AoSoA<DataTypes, Kokkos::HostSpace, vector_length>;
+    //using AoSoA_t = Cabana::AoSoA<DataTypes, Kokkos::CudaUVMSpace, vector_length>;
+    printf("Done malloc \n");
     std::string label = "sample_aosoa";
 
-    //int num_data = 1024; // * 1024;   // 2kb
-    //int num_data = 1024 * 1024;       // 200mb
-    //int num_data = 1024 * 1024 * 32;  // 6.4GB
-    int num_data = 1024 * 1024 * 112;   // 20GB (20199768064)
 
-    AoSoA_t h_aosoa( label, num_data );
+    AoSoA_t uvm_aosoa( label, num_data );
 
-    // TODO: add an assert to make sure that max_buffer
-    // Start by only buffering over one AoSoA at a time for stress test
-    //const int max_buffered_tuples = 8 * vector_length;
-    const int max_buffered_tuples = h_aosoa.size() / 4;
-
-    // emulate a minimum of triple buffering?
-    const int buffer_count = 3;
-
-    // Hard code into OpenMP space for now
-    // TODO: specify the exec space via a test param
-    using target_exec_space = TEST_EXECSPACE;
-
-    // Init the AoSoA data
-    auto slice_0 = Cabana::slice<0>( h_aosoa );
-    auto slice_1 = Cabana::slice<1>( h_aosoa );
-    auto slice_2 = Cabana::slice<2>( h_aosoa );
-    auto slice_3 = Cabana::slice<3>( h_aosoa );
-
-    // Initialize data with the rank accessors.
-    float fval = 3.4;
-    double dval = 1.23;
-    int ival = 1;
-
-    /*
-    // Initing big data on the CPU is painfully slow
-    printf("%d Starting init ... \n", __LINE__);
-
-    for ( std::size_t idx = 0; idx != h_aosoa.size(); ++idx )
-    {
-        // Member 0.
-        for ( int i = 0; i < dim_1; ++i )
-            for ( int j = 0; j < dim_2; ++j )
-                for ( int k = 0; k < dim_3; ++k )
-                    slice_0( idx, i, j, k ) = fval * ( i + j + k );
-
-        // Member 1.
-        slice_1( idx ) = ival;
-
-        // Member 2.
-        for ( int i = 0; i < dim_1; ++i )
-            slice_2( idx, i ) = dval * i;
-
-        // Member 3.
-        for ( int i = 0; i < dim_1; ++i )
-            for ( int j = 0; j < dim_2; ++j )
-                slice_3( idx, i, j ) = dval * ( i + j );
-    }
-
-    checkDataMembers( h_aosoa, fval, dval, ival, dim_1, dim_2, dim_3 );
-    */
-
-    using buf_t =
-        Cabana::BufferedAoSoA<buffer_count, target_exec_space, AoSoA_t>;
-
-    buf_t buffered_aosoa_in( h_aosoa, max_buffered_tuples );
-
+    //std::cout << "Making UVM array of size " << num_data << std::endl;
+    //std::cout << num_data * sizeof(DataTypes) << " bytes " << std::endl;
     // Reset values so the outcome differs
-    fval = 4.4;
-    dval = 2.23;
-    ival = 2;
+    float fval = 4.4;
+    double dval = 2.23;
+    int ival = 2;
+
+    const auto slice_0 = Cabana::slice<0>(uvm_aosoa);
+    const auto slice_1 = Cabana::slice<1>(uvm_aosoa);
+    const auto slice_2 = Cabana::slice<2>(uvm_aosoa);
+    const auto slice_3 = Cabana::slice<3>(uvm_aosoa);
 
     printf("%d Starting parallel for ... \n", __LINE__);
-
     using namespace std::chrono;
     high_resolution_clock::time_point t1 = high_resolution_clock::now();
 
-    Cabana::buffered_parallel_for(
-        Kokkos::RangePolicy<target_exec_space>( 0, h_aosoa.size() ),
-        buffered_aosoa_in,
-        KOKKOS_LAMBDA( buf_t buffered_aosoa, const int s, const int a ) {
-            // We have to call access and slice in the loop
+    auto f = KOKKOS_LAMBDA( const int s, const int a ) {
+        // We have to call access and slice in the loop
 
-            // We have to be really careful about how this access is
-            // captured in the loop on GPU, and follow how ScatterView does
-            // it safely. The `buffered_aosoa` may get captured by
-            // reference, and then not be valid in a GPU context
-            // auto buffered_access = buffered_aosoa.access();
-            // auto buffered_access = buffered_aosoa.access();
-
-            const auto slice_0 = buffered_aosoa.get_slice<0>();
-            const auto slice_1 = buffered_aosoa.get_slice<1>();
-            const auto slice_2 = buffered_aosoa.get_slice<2>();
-            const auto slice_3 = buffered_aosoa.get_slice<3>();
+        // We have to be really careful about how this access is
+        // captured in the loop on GPU, and follow how ScatterView does
+        // it safely. The `buffered_aosoa` may get captured by
+        // reference, and then not be valid in a GPU context
+        // auto buffered_access = buffered_aosoa.access();
+        // auto buffered_access = buffered_aosoa.access();
 
         // Member 0.
         for ( int i = 0; i < dim_1; ++i )
@@ -261,9 +206,14 @@ void testBufferedDataCreation()
                 slice_3.access( s, a, i, j ) = dval * ( i + j ) * sqrtf(dval-j);
             }
         }
+    };
 
-        },
-        "test buffered for" );
+    auto policy = Cabana::SimdPolicy< AoSoA_t::vector_length,
+         Kokkos::DefaultExecutionSpace >( 0, uvm_aosoa.size() );
+
+
+    Cabana::simd_parallel_for( policy,
+        f, "test_simd");
 
     Kokkos::fence();
 
@@ -272,14 +222,69 @@ void testBufferedDataCreation()
 
     printf("%d End parallel for. %e \n", __LINE__, time_taken.count() );
 
-    //checkDataMembers( h_aosoa, fval, dval, ival, dim_1, dim_2, dim_3, 0 );
+    // Reset the values on the host
+    //fval = 4.4;
+    //dval = 2.23;
+    //ival = 2;
+
+    high_resolution_clock::time_point t3 = high_resolution_clock::now();
+
+    auto policy2 = Cabana::SimdPolicy< AoSoA_t::vector_length,
+         Kokkos::DefaultHostExecutionSpace >( 0, uvm_aosoa.size() );
+
+    Cabana::simd_parallel_for( policy2,
+        f, "test_simd");
+
+    Kokkos::fence();
+
+    high_resolution_clock::time_point t4 = high_resolution_clock::now();
+    time_taken = duration_cast<duration<double>>( t4 - t3 );
+
+    //checkDataMembers( uvm_aosoa, fval, dval, ival, dim_1, dim_2, dim_3, 0 );
     //checkDataMembers( h_aosoa, fval, dval, ival, dim_1, dim_2, dim_3 );
+}
+
+void testCrossExec()
+{
+    int n = 40;
+    Kokkos::View<float*> a("a", n);
+
+    auto a_sub = Kokkos::subview(a, Kokkos::make_pair (10, 20) );
+
+    float new_val = 10.0;
+    auto f = KOKKOS_LAMBDA(int i )
+       {
+           a(i) = new_val;
+       };
+
+    Kokkos::parallel_for("check",
+            Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, a.size() ), f);
+
+    decltype(a)::HostMirror a_h = Kokkos::create_mirror_view_and_copy( Kokkos::HostSpace(), a);
+
+    new_val = 20.0;
+    auto f2 = KOKKOS_LAMBDA(int i )
+       {
+           a_sub(i) = new_val;
+       };
+
+    Kokkos::parallel_for("check",
+            Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, 10 ), f);
+
+    Kokkos::deep_copy(a_h, a_sub);
+
+
+    for (int i = 0; i < n; i++)
+    {
+        printf(" %d = %e \n", i, a(i) );
+    }
 }
 
 //---------------------------------------------------------------------------//
 // RUN TESTS
 //---------------------------------------------------------------------------//
-TEST( TEST_CATEGORY, bufferedData_test ) { testBufferedDataCreation(); }
+TEST( TEST_CATEGORY, bufferedUVMData_test ) { testBufferedCudaUVM(); }
+//TEST( TEST_CATEGORY, cross_exec_test ) { testCrossExec(); }
 // TEST( TEST_CATEGORY, bufferedData_tag_test ) { testBufferedTag(); }
 
 } // namespace Test

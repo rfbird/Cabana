@@ -373,7 +373,6 @@ void tstOverlapingSpaces( bool async = true )
 
     Kokkos::fence(); // fence before async timing
 
-    using namespace std::chrono;
     high_resolution_clock::time_point t1 = high_resolution_clock::now();
 
     float fval = 4.4;

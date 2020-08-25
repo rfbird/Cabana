@@ -183,6 +183,10 @@ class BufferedAoSoA
     // where we perform the compute
     target_AoSoA_t internal_buffers[requested_buffer_count];
     // std::vector<target_AoSoA_t> internal_buffers;
+    //
+
+    AoSoA_t src_partial;
+    AoSoA_t dst_partial;
 
     /**
      * @brief constructor for BufferedAoSoA
@@ -204,6 +208,7 @@ class BufferedAoSoA
         // TODO: add asserts to check the balance between the size (num_data)
         // and the max_buffered_tuples
 
+        assert( max_buffered_tuples <= original_view.size() );
         // Resize the buffers so we know they can hold enough
         for ( int i = 0; i < num_buffers; i++ )
         {
@@ -214,6 +219,10 @@ class BufferedAoSoA
             internal_buffers[i] =
                 target_AoSoA_t( internal_buff_name, buffer_size );
         }
+
+        // Both on host...
+        src_partial = AoSoA_t( "deep_copy_partial src", buffer_size );
+        dst_partial = AoSoA_t( "deep_copy_partial dst", buffer_size );
     }
 
     /**
@@ -250,7 +259,7 @@ class BufferedAoSoA
     void copy_buffer_back( exec_space &space, int buffer_index, int to_index )
     {
         std::cout << "original view size " << original_view.size() << std::endl;
-        Cabana::deep_copy_partial_dst( space, original_view,
+        Cabana::deep_copy_partial_dst( space, original_view, dst_partial,
                                        internal_buffers[buffer_index], to_index,
                                        // 0, // from index
                                        buffer_size );
@@ -273,7 +282,10 @@ class BufferedAoSoA
         int start_index = normalized_buffer_number * buffer_size;
         // Copy from the main memory store into the "current" buffer
         Cabana::deep_copy_partial_src(
-            space, internal_buffers[normalized_buffer_number], original_view,
+            space, 
+            internal_buffers[normalized_buffer_number], 
+            original_view,
+            src_partial,
             // 0, // to_index,
             start_index, buffer_size );
 

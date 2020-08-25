@@ -195,7 +195,7 @@ inline void buffered_parallel_for(
         // Cabana::simd_parallel_for( policy, functor, str );
         // Kokkos::fence();
 
-        auto s = Cabana::slice<0>( buffered_aosoa.internal_buffers[0] );
+        //auto s = Cabana::slice<0>( buffered_aosoa.internal_buffers[0] );
 
         if ( i < niter - 1 )
         { // Don't copy "next" on the last iteration
@@ -205,7 +205,7 @@ inline void buffered_parallel_for(
         // This fence is needed so we don't copy back the work we just
         // finished. After the first iteration we can overlap copy to + work +
         // copy back if we want
-        Kokkos::fence();
+        //Kokkos::fence();
 
         // copy all data back from localbuffer into the correct location in
         // global

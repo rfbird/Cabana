@@ -14,6 +14,8 @@
 
 #include <Cabana_AoSoA.hpp>
 #include <Cabana_BufferedFor.hpp> // TODO: remove
+#include <chrono> // TODO: remove
+#include <iomanip> // TODO: remove
 #include <Cabana_Slice.hpp>
 #include <impl/Cabana_TypeTraits.hpp>
 
@@ -159,6 +161,11 @@ deep_copy( DstAoSoA &dst, const SrcAoSoA &src, bool async = false,
            typename std::enable_if<( is_aosoa<DstAoSoA>::value &&
                                      is_aosoa<SrcAoSoA>::value )>::type * = 0 )
 {
+    {
+        auto now = std::chrono::system_clock::now();
+        auto now_c = std::chrono::system_clock::to_time_t(now);
+        std::cout << "Deep copy start " << std::put_time(std::localtime(&now_c), "%c") << '\n';
+    }
     using dst_type = DstAoSoA;
     using src_type = SrcAoSoA;
     using dst_memory_space = typename dst_type::memory_space;
@@ -208,8 +215,16 @@ deep_copy( DstAoSoA &dst, const SrcAoSoA &src, bool async = false,
         {
             std::cout << __FILE__ << ":" << __LINE__ << " => Async copy "
                       << std::endl;
-            Kokkos::Impl::DeepCopyAsyncCuda(
-                dst_data, src_data, dst_num_soa * sizeof( dst_soa_type ) );
+            //Kokkos::Impl::DeepCopyAsyncCuda(
+                //dst_data, src_data, dst_num_soa * sizeof( dst_soa_type ) );
+
+            int n = dst_num_soa * sizeof( dst_soa_type );
+
+            cudaStream_t s;
+            cudaStreamCreate(&s);
+            //CUDA_SAFE_CALL(cudaMemcpyAsync(dst, src, n, cudaMemcpyDefault, s));
+            cudaMemcpyAsync(dst_data, src_data, n, cudaMemcpyDefault, s);
+            //cudaStreamSynchronize(s);
         }
         else
         {
@@ -234,8 +249,13 @@ deep_copy( DstAoSoA &dst, const SrcAoSoA &src, bool async = false,
         };
         Kokkos::RangePolicy<typename dst_type::execution_space> exec_policy(
             0, dst.size() );
-        Kokkos::parallel_for( "Cabana::deep_copy", exec_policy, copy_func );
+        Kokkos::parallel_for( "Cabana::deep_copy impl", exec_policy, copy_func );
         Kokkos::fence();
+    }
+    {
+        auto now = std::chrono::system_clock::now();
+        auto now_c = std::chrono::system_clock::to_time_t(now);
+        std::cout << "Deep copy end " << std::put_time(std::localtime(&now_c), "%c") << '\n';
     }
 }
 
@@ -260,7 +280,7 @@ inline void deep_copy( AoSoA_t &aosoa,
     };
     Kokkos::RangePolicy<typename AoSoA_t::execution_space> exec_policy(
         0, aosoa.size() );
-    Kokkos::parallel_for( "Cabana::deep_copy", exec_policy, assign_func );
+    Kokkos::parallel_for( "Cabana::deep_copy impl", exec_policy, assign_func );
     Kokkos::fence();
 }
 
@@ -409,13 +429,21 @@ inline void deep_copy( Slice_t &slice,
  */
 template <typename exec_space, class DstAoSoA, class SrcAoSoA>
 inline void deep_copy_partial_src(
-    exec_space &space, DstAoSoA &dst, const SrcAoSoA &src,
+    exec_space &space,
+    DstAoSoA &dst,
+    const SrcAoSoA &src,
+    const SrcAoSoA &src_partial,
     // const int to_index,
     // TODO: the order of these params is questionable
     const int from_index, const int count,
     typename std::enable_if<( is_aosoa<DstAoSoA>::value &&
                               is_aosoa<SrcAoSoA>::value )>::type * = 0 )
 {
+    {
+        auto now = std::chrono::system_clock::now();
+        auto now_c = std::chrono::system_clock::to_time_t(now);
+        std::cout << " deep copy src start " << std::put_time(std::localtime(&now_c), "%c") << '\n';
+    }
     // TODO: this assumes you're trying to cross exec spaces (i.e partial copy
     // from CPU to GPU). You can likely do this faster and avoid data
     // duplication if that is not true
@@ -435,7 +463,7 @@ inline void deep_copy_partial_src(
     // but luckily that is not the most common use-case.
 
     // Make AoSoA in src space to copy over
-    SrcAoSoA src_partial( "deep_copy_partial src", count );
+    //SrcAoSoA src_partial( "deep_copy_partial src", count );
 
     assert( ( size_t )( from_index + count ) <= src.size() );
 
@@ -452,10 +480,13 @@ inline void deep_copy_partial_src(
         src_partial.setTuple( i, src.getTuple( i + from_index ) );
     };
 
+    //Kokkos::RangePolicy<typename exec_space> exec_policy(
+            //space,
     Kokkos::RangePolicy<typename SrcAoSoA::execution_space> exec_policy(
+            Kokkos::DefaultHostExecutionSpace(),
         0, src_partial.size() );
 
-    Kokkos::parallel_for( "Cabana::deep_copy", exec_policy, copy_func );
+    Kokkos::parallel_for( "Cabana::deep_copy tuple src", exec_policy, copy_func );
 
     std::cout << "src particle size " << src_partial.size() << " dst size "
               << dst.size() << std::endl;
@@ -469,6 +500,11 @@ inline void deep_copy_partial_src(
     bool async = 1; // TODO: this could be a template?
     Cabana::deep_copy( dst, src_partial, async );
     // Cabana::deep_copy( dst, src_partial );
+    {
+    auto now = std::chrono::system_clock::now();
+    auto now_c = std::chrono::system_clock::to_time_t(now);
+    std::cout << " deep copy src end " << std::put_time(std::localtime(&now_c), "%c") << '\n';
+    }
 }
 
 // TODO: this can be DRYd with deep_copy_partial, but we need a
@@ -484,18 +520,26 @@ inline void deep_copy_partial_src(
  */
 template <typename exec_space, class DstAoSoA, class SrcAoSoA>
 inline void deep_copy_partial_dst(
-    exec_space &space, DstAoSoA dst, const SrcAoSoA src,
+    exec_space &space,
+    DstAoSoA dst,
+    DstAoSoA dst_partial,
+    const SrcAoSoA src,
     const int to_index, // TODO: the order of these params is questionable
     // const int from_index, // TODO: not honored
     const int count,
     typename std::enable_if<( is_aosoa<DstAoSoA>::value &&
                               is_aosoa<SrcAoSoA>::value )>::type * = 0 )
 {
+    {
+        auto now = std::chrono::system_clock::now();
+        auto now_c = std::chrono::system_clock::to_time_t(now);
+        std::cout << "Deep copy dst start " << std::put_time(std::localtime(&now_c), "%c") << '\n';
+    }
     std::cout << "About to do deep copy back to " << to_index << " .. "
               << count + to_index << std::endl;
 
     // Make AoSoA in dst space to copy over
-    DstAoSoA dst_partial( "deep_copy_partial dst", count );
+    //DstAoSoA dst_partial( "deep_copy_partial dst", count );
 
     std::cout << "dst partial size " << dst_partial.size() << std::endl;
     std::cout << "src size " << src.size() << std::endl;
@@ -508,28 +552,84 @@ inline void deep_copy_partial_dst(
     assert( to_index + count <= dst.size() );
 
     // Populate it with data using a parallel for
-    auto copy_func = KOKKOS_LAMBDA( const std::size_t i )
+
+    const auto d0 = Cabana::slice<0>(dst);
+    const auto d1 = Cabana::slice<1>(dst);
+    const auto d2 = Cabana::slice<2>(dst);
+    const auto d3 = Cabana::slice<3>(dst);
+
+    const auto p0 = Cabana::slice<0>(dst_partial);
+    const auto p1 = Cabana::slice<1>(dst_partial);
+    const auto p2 = Cabana::slice<2>(dst_partial);
+    const auto p3 = Cabana::slice<3>(dst_partial);
+
+    // Data dimensions.
+    const int dim_1 = 3;
+    const int dim_2 = 2;
+    const int dim_3 = 4;
+    //auto copy_func = KOKKOS_LAMBDA( const std::size_t i )
+    auto copy_func = KOKKOS_LAMBDA( const std::size_t s, const std::size_t a )
     {
-        dst.setTuple( i + to_index, dst_partial.getTuple( i ) );
+        //dst.setTuple( i + to_index, dst_partial.getTuple( i ) );
+        for ( int i = 0; i < dim_1; ++i )
+        {
+            for ( int j = 0; j < dim_2; ++j )
+            {
+                for ( int k = 0; k < dim_3; ++k )
+                {
+                    d0.access( s, a, i, j, k ) = p0.access(s, a,i,j,k);
+                }
+            }
+        }
+
+        // Member 1.
+        d1.access( s, a ) = p1.access( s, a);
+
+        // Member 2.
+        for ( int i = 0; i < dim_1; ++i )
+        {
+            d2.access( s, a, i ) = p2.access(s, a, i);
+        }
+
+        // Member 3.
+        for ( int i = 0; i < dim_1; ++i )
+        {
+            for ( int j = 0; j < dim_2; ++j )
+            {
+                d3.access( s, a, i, j ) = p3.access(s, a, i, j);
+            }
+        }
+
     };
 
+    Cabana::SimdPolicy<DstAoSoA::vector_length, typename DstAoSoA::execution_space> policy_1(
+    0, dst_partial.size() );
+    Cabana::simd_parallel_for( policy_1, copy_func, "check" );
+
     // TODO: hoist this up to a higher level
-    using target_space_t = typename DstAoSoA::execution_space;
-    target_space_t target_async_space = SpaceInstance<target_space_t>::create();
+    //using target_space_t = typename DstAoSoA::execution_space;
+    //target_space_t target_async_space = SpaceInstance<target_space_t>::create();
     // Kokkos::RangePolicy<typename DstAoSoA::execution_space> exec_policy(
     // 0, dst_partial.size() );
-    Kokkos::RangePolicy<target_space_t> exec_policy(
-        target_async_space,
+    //Kokkos::RangePolicy<typename DstAoSoA::execution_space> exec_policy(
+        //space,
+        //Kokkos::DefaultHostExecutionSpace(),
+        //DstAoSoA::execution_space(),
         // Kokkos::RangePolicy<exec_space> exec_policy( space,
-        0, dst_partial.size() );
+        //0, dst_partial.size() );
 
-    Kokkos::parallel_for( "Cabana::deep_copy", exec_policy, copy_func );
+    //Kokkos::parallel_for( "Cabana::deep_copy tuple dst", exec_policy, copy_func );
     // Kokkos::fence();
 
-    Kokkos::fence();
-    SpaceInstance<target_space_t>::destroy( target_async_space );
+    //Kokkos::fence();
+    //SpaceInstance<target_space_t>::destroy( target_async_space );
 
     assert( dst_partial.size() == src.size() );
+    {
+        auto now = std::chrono::system_clock::now();
+        auto now_c = std::chrono::system_clock::to_time_t(now);
+        std::cout << "Deep copy dst end " << std::put_time(std::localtime(&now_c), "%c") << '\n';
+    }
 }
 
 } // end namespace Cabana
